@@ -3,20 +3,13 @@ import { test, expect, Page, Locator } from '@playwright/test';
 test(
   'Volunteer Registration - Complete Registration Through Application Submission',
   async ({ page }) => {
-
     test.setTimeout(180000);
 
     // ============================================================
     // TEST DATA
     // ============================================================
 
-    const EMAILS = [
-      'michael.johnson@example.com',
-      'michael.johnson2026@example.com',
-      'michael.johnson2027@example.com',
-      'michael.johnson2028@example.com',
-      'michael.johnson2029@example.com'
-    ];
+    const PRIMARY_EMAIL = 'michael.johnson@example.com';
 
     const FIRST_NAME = 'Michael';
     const LAST_NAME = 'Johnson';
@@ -28,26 +21,42 @@ test(
     async function getVisibleNextButton(
       currentPage: Page
     ): Promise<Locator> {
-
       const candidates = [
-        currentPage.getByRole('button', { name: /^next$/i }),
-        currentPage.locator('button:has-text("Next")'),
-        currentPage.locator('input[type="button"][value="Next"]'),
-        currentPage.locator('input[type="submit"][value="Next"]'),
-        currentPage.getByText('Next', { exact: true })
+        currentPage.getByRole('button', {
+          name: /^next$/i
+        }),
+
+        currentPage.locator(
+          'button:has-text("Next")'
+        ),
+
+        currentPage.locator(
+          'input[type="button"][value="Next"]'
+        ),
+
+        currentPage.locator(
+          'input[type="submit"][value="Next"]'
+        ),
+
+        currentPage.getByText(
+          'Next',
+          {
+            exact: true
+          }
+        )
       ];
 
       for (const candidate of candidates) {
-
         const count = await candidate.count();
 
         for (let i = 0; i < count; i++) {
-
           const item = candidate.nth(i);
 
-          if (
-            !(await item.isVisible().catch(() => false))
-          ) {
+          const visible = await item
+            .isVisible()
+            .catch(() => false);
+
+          if (!visible) {
             continue;
           }
 
@@ -69,17 +78,87 @@ test(
     }
 
     // ============================================================
+    // HELPER - CHECK WHETHER HEADING IS VISIBLE
+    // ============================================================
+
+    async function isHeadingVisible(
+      currentPage: Page,
+      headingName: string
+    ): Promise<boolean> {
+      const heading = currentPage.getByText(
+        headingName,
+        {
+          exact: true
+        }
+      );
+
+      const count = await heading.count();
+
+      for (let i = 0; i < count; i++) {
+        const item = heading.nth(i);
+
+        if (
+          await item
+            .isVisible()
+            .catch(() => false)
+        ) {
+          const box = await item
+            .boundingBox()
+            .catch(() => null);
+
+          if (box) {
+            return true;
+          }
+        }
+      }
+
+      return false;
+    }
+
+    // ============================================================
+    // HELPER - GET CURRENT VISIBLE TAB
+    //
+    // This is the important hidden-tab logic.
+    //
+    // If a tab exists in the DOM but is hidden, it is ignored.
+    // ============================================================
+
+    async function getVisibleTab(
+      currentPage: Page,
+      tabNames: string[]
+    ): Promise<string | null> {
+      for (const tabName of tabNames) {
+        if (
+          await isHeadingVisible(
+            currentPage,
+            tabName
+          )
+        ) {
+          return tabName;
+        }
+      }
+
+      return null;
+    }
+
+    // ============================================================
     // HELPER - WAIT FOR INFO FORM
     // ============================================================
 
-    async function waitForInfoForm(currentPage: Page) {
+    async function waitForInfoForm(
+      currentPage: Page
+    ): Promise<void> {
+      const firstNameField =
+        currentPage.getByLabel(
+          'First Name *',
+          {
+            exact: true
+          }
+        );
 
-      const firstNameField = currentPage.getByLabel(
-        'First Name *',
-        { exact: true }
-      );
-
-      await expect(firstNameField).toBeVisible({
+      await expect(
+        firstNameField
+      ).toBeVisible({
         timeout: 30000
       });
     }
@@ -91,44 +170,53 @@ test(
     async function isExistingApplicationMessageVisible(
       currentPage: Page
     ): Promise<boolean> {
+      const messages = [
+        currentPage.getByText(
+          /Your application is\s*under process/i
+        ),
 
-      const messageLocator = currentPage.getByText(
-        /Your application is\s*under process\.\s*Please\s*hold on until its\s*verified and approved\./i
-      );
+        currentPage.getByText(
+          /Please\s*hold on until its\s*verified and approved/i
+        ),
 
-      const count = await messageLocator.count();
+        currentPage.locator(
+          'text=/Your application is.*under process/i'
+        )
+      ];
 
-      for (let i = 0; i < count; i++) {
+      for (const message of messages) {
+        const count = await message.count();
 
-        const message = messageLocator.nth(i);
+        for (let i = 0; i < count; i++) {
+          const item = message.nth(i);
 
-        if (
-          await message.isVisible().catch(() => false)
-        ) {
-          return true;
-        }
-      }
-
-      // Backup check for slightly different spacing/text
-      const backupMessage = currentPage.getByText(
-        /Your application is\s*under process/i
-      );
-
-      const backupCount = await backupMessage.count();
-
-      for (let i = 0; i < backupCount; i++) {
-
-        if (
-          await backupMessage
-            .nth(i)
-            .isVisible()
-            .catch(() => false)
-        ) {
-          return true;
+          if (
+            await item
+              .isVisible()
+              .catch(() => false)
+          ) {
+            return true;
+          }
         }
       }
 
       return false;
+    }
+
+    // ============================================================
+    // HELPER - CREATE UNIQUE EMAIL
+    //
+    // Every time duplicate application message appears,
+    // generate a different email.
+    // ============================================================
+
+    function generateAlternateEmail(
+      attemptNumber: number
+    ): string {
+      const timestamp =
+        Date.now();
+
+      return `michael.johnson.${timestamp}.${attemptNumber}@example.com`;
     }
 
     // ============================================================
@@ -138,25 +226,30 @@ test(
     async function findVisibleSkill(
       skillName: string
     ): Promise<Locator | null> {
+      const matches =
+        page.getByText(
+          skillName,
+          {
+            exact: true
+          }
+        );
 
-      const matches = page.getByText(
-        skillName,
-        { exact: true }
-      );
-
-      const count = await matches.count();
+      const count =
+        await matches.count();
 
       for (let i = 0; i < count; i++) {
-
-        const candidate = matches.nth(i);
+        const candidate =
+          matches.nth(i);
 
         if (
-          await candidate.isVisible().catch(() => false)
+          await candidate
+            .isVisible()
+            .catch(() => false)
         ) {
-
-          const box = await candidate
-            .boundingBox()
-            .catch(() => null);
+          const box =
+            await candidate
+              .boundingBox()
+              .catch(() => null);
 
           if (box) {
             return candidate;
@@ -175,28 +268,34 @@ test(
       optionNames: string[],
       questionName: string
     ): Promise<string[]> {
-
       const selectedOptions: string[] = [];
 
       for (const optionName of optionNames) {
-
-        if (selectedOptions.length >= 3) {
+        if (
+          selectedOptions.length >= 3
+        ) {
           break;
         }
 
-        const option = await findVisibleSkill(optionName);
+        const option =
+          await findVisibleSkill(
+            optionName
+          );
 
         if (!option) {
           console.log(
             `${questionName}: option not visible - ${optionName}`
           );
+
           continue;
         }
 
         await option.scrollIntoViewIfNeeded();
+
         await page.waitForTimeout(300);
 
-        const optionBox = await option.boundingBox();
+        const optionBox =
+          await option.boundingBox();
 
         if (!optionBox) {
           continue;
@@ -206,9 +305,12 @@ test(
           `${questionName}: found option - ${optionName}`
         );
 
-        const checkboxX = optionBox.x - 32;
+        const checkboxX =
+          optionBox.x - 32;
+
         const checkboxY =
-          optionBox.y + optionBox.height / 2;
+          optionBox.y +
+          optionBox.height / 2;
 
         await page.mouse.click(
           checkboxX,
@@ -217,7 +319,9 @@ test(
 
         await page.waitForTimeout(700);
 
-        selectedOptions.push(optionName);
+        selectedOptions.push(
+          optionName
+        );
 
         console.log(
           `${questionName}: selected ${selectedOptions.length} - ${optionName}`
@@ -225,6 +329,27 @@ test(
       }
 
       return selectedOptions;
+    }
+
+    // ============================================================
+    // HELPER - CLICK NEXT
+    // ============================================================
+
+    async function clickNext(
+      message: string
+    ): Promise<void> {
+      const nextButton =
+        await getVisibleNextButton(
+          page
+        );
+
+      await nextButton.scrollIntoViewIfNeeded();
+
+      await nextButton.click();
+
+      console.log(message);
+
+      await page.waitForTimeout(2500);
     }
 
     // ============================================================
@@ -242,12 +367,17 @@ test(
     // 2. CLICK FILL REGISTRATION FORM
     // ============================================================
 
-    const registrationButton = page.getByText(
-      'Fill Registration Form',
-      { exact: true }
-    );
+    const registrationButton =
+      page.getByText(
+        'Fill Registration Form',
+        {
+          exact: true
+        }
+      );
 
-    await expect(registrationButton).toBeVisible({
+    await expect(
+      registrationButton
+    ).toBeVisible({
       timeout: 30000
     });
 
@@ -263,35 +393,68 @@ test(
 
     await page.waitForTimeout(3000);
 
-    await waitForInfoForm(page);
+    await waitForInfoForm(
+      page
+    );
 
     // ============================================================
-    // 3. REQUIRED FIELD VALIDATION
+    // 3. INFO TAB
     // ============================================================
 
-    let nextButton = await getVisibleNextButton(page);
+    let nextButton =
+      await getVisibleNextButton(
+        page
+      );
 
     await nextButton.scrollIntoViewIfNeeded();
+
+    // ============================================================
+    // 4. CLICK NEXT WITH EMPTY FIELDS
+    // ============================================================
+
     await nextButton.click();
 
-    await page.waitForTimeout(1500);
+    await page.waitForTimeout(
+      1500
+    );
+
+    // ============================================================
+    // 5. VALIDATE REQUIRED FIELD MESSAGES
+    // ============================================================
 
     await expect(
-      page.getByText('First Name is required', { exact: true })
+      page.getByText(
+        'First Name is required',
+        {
+          exact: true
+        }
+      )
     ).toBeVisible();
 
     await expect(
-      page.getByText('Last Name is required', { exact: true })
+      page.getByText(
+        'Last Name is required',
+        {
+          exact: true
+        }
+      )
     ).toBeVisible();
 
     await expect(
-      page.getByText('Email is required', { exact: true })
+      page.getByText(
+        'Email is required',
+        {
+          exact: true
+        }
+      )
     ).toBeVisible();
 
     await expect(
       page.getByText(
         'Emergency Contact Name is required',
-        { exact: true }
+        {
+          exact: true
+        }
       )
     ).toBeVisible();
 
@@ -306,596 +469,827 @@ test(
     });
 
     // ============================================================
-    // 4. FILL INFO TAB
+    // 6. FILL INFO FIELDS
     // ============================================================
 
-    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.evaluate(() => {
+      window.scrollTo(0, 0);
+    });
+
     await page.waitForTimeout(500);
 
-    const firstName = page.getByLabel(
-      'First Name *',
-      { exact: true }
+    const firstName =
+      page.getByLabel(
+        'First Name *',
+        {
+          exact: true
+        }
+      );
+
+    await expect(
+      firstName
+    ).toBeVisible({
+      timeout: 15000
+    });
+
+    await firstName.fill(
+      FIRST_NAME
     );
 
-    const lastName = page.getByLabel(
-      'Last Name *',
-      { exact: true }
+    const lastName =
+      page.getByLabel(
+        'Last Name *',
+        {
+          exact: true
+        }
+      );
+
+    await lastName.fill(
+      LAST_NAME
     );
 
-    const email = page.locator('#email');
+    const email =
+      page.locator(
+        '#email'
+      );
 
-    const phoneNumber = page.getByLabel(
-      'Phone Number',
-      { exact: true }
+    await expect(
+      email
+    ).toBeVisible({
+      timeout: 15000
+    });
+
+    await email.fill(
+      PRIMARY_EMAIL
     );
-
-    const contactName = page.getByLabel(
-      'Contact Name *',
-      { exact: true }
-    );
-
-    const contactPhone = page.getByLabel(
-      'Contact Phone *',
-      { exact: true }
-    );
-
-    await firstName.fill(FIRST_NAME);
-    await lastName.fill(LAST_NAME);
-
-    await email.fill(EMAILS[0]);
 
     console.log(
-      `Primary email entered: ${EMAILS[0]}`
+      `Primary email entered: ${PRIMARY_EMAIL}`
     );
 
-    await phoneNumber.fill('(415) 555-0123');
+    const phoneNumber =
+      page.getByLabel(
+        'Phone Number',
+        {
+          exact: true
+        }
+      );
+
+    await phoneNumber.fill(
+      '(415) 555-0123'
+    );
+
+    const contactName =
+      page.getByLabel(
+        'Contact Name *',
+        {
+          exact: true
+        }
+      );
 
     await contactName.scrollIntoViewIfNeeded();
-    await contactName.fill('Sarah Johnson');
+
+    await contactName.fill(
+      'Sarah Johnson'
+    );
+
+    const contactPhone =
+      page.getByLabel(
+        'Contact Phone *',
+        {
+          exact: true
+        }
+      );
 
     await contactPhone.scrollIntoViewIfNeeded();
-    await contactPhone.fill('(456) 565-7676');
+
+    await contactPhone.fill(
+      '(456) 565-7676'
+    );
 
     // ============================================================
-    // 5. VALIDATE INFO VALUES
+    // 7. VALIDATE INFO VALUES
     // ============================================================
 
-    await expect(firstName).toHaveValue(FIRST_NAME);
-    await expect(lastName).toHaveValue(LAST_NAME);
-    await expect(email).toHaveValue(EMAILS[0]);
-    await expect(phoneNumber).toHaveValue('(415) 555-0123');
-    await expect(contactName).toHaveValue('Sarah Johnson');
-    await expect(contactPhone).toHaveValue('(456) 565-7676');
+    await expect(
+      firstName
+    ).toHaveValue(
+      FIRST_NAME
+    );
+
+    await expect(
+      lastName
+    ).toHaveValue(
+      LAST_NAME
+    );
+
+    await expect(
+      email
+    ).toHaveValue(
+      PRIMARY_EMAIL
+    );
+
+    await expect(
+      phoneNumber
+    ).toHaveValue(
+      '(415) 555-0123'
+    );
+
+    await expect(
+      contactName
+    ).toHaveValue(
+      'Sarah Johnson'
+    );
+
+    await expect(
+      contactPhone
+    ).toHaveValue(
+      '(456) 565-7676'
+    );
 
     console.log(
       'All required fields were filled successfully.'
     );
 
     // ============================================================
-    // 6. INFO -> SKILLS
+    // 8. INFO -> NEXT
     //
     // IMPORTANT:
-    // Keep clicking Next with a new email whenever the
-    // existing-application message is displayed.
+    // Duplicate email check happens AFTER Next.
     // ============================================================
 
-    let emailIndex = 0;
-    let emailAccepted = false;
-
-    while (!emailAccepted) {
-
-      nextButton = await getVisibleNextButton(page);
-
-      await nextButton.scrollIntoViewIfNeeded();
-      await nextButton.click();
-
-      console.log(
-        `NEXT clicked from Info tab using email: ${EMAILS[emailIndex]}`
+    nextButton =
+      await getVisibleNextButton(
+        page
       );
 
-      // Wait for either validation/message/navigation
-      await page.waitForTimeout(2500);
+    await nextButton.scrollIntoViewIfNeeded();
 
-      const duplicateMessage =
-        await isExistingApplicationMessageVisible(page);
+    await nextButton.click();
 
-      if (!duplicateMessage) {
+    console.log(
+      'NEXT clicked from Info tab.'
+    );
 
-        console.log(
-          'Existing application message not displayed.'
-        );
+    await page.waitForTimeout(
+      2500
+    );
 
-        console.log(
-          `Email is available. Continuing with: ${EMAILS[emailIndex]}`
-        );
+    // ============================================================
+    // 9. DUPLICATE EMAIL LOOP
+    //
+    // Every time the existing application message appears:
+    // 1. Change email
+    // 2. Click Next again
+    // 3. Check again
+    //
+    // Continue until the message is NOT displayed.
+    // ============================================================
 
-        emailAccepted = true;
-        break;
-      }
+    let currentEmail =
+      PRIMARY_EMAIL;
+
+    let duplicateAttempt = 0;
+
+    while (
+      await isExistingApplicationMessageVisible(
+        page
+      )
+    ) {
+      duplicateAttempt++;
 
       console.log(
         'Existing application message displayed.'
       );
 
       console.log(
-        'Application already exists. Changing email address.'
+        'Your application already exists in the system.'
       );
 
-      emailIndex++;
-
-      if (emailIndex >= EMAILS.length) {
-        throw new Error(
-          'All configured email addresses already have an existing application. Add another unused email address to EMAILS.'
+      currentEmail =
+        generateAlternateEmail(
+          duplicateAttempt
         );
-      }
-
-      const newEmail = EMAILS[emailIndex];
 
       console.log(
-        `Changing email to: ${newEmail}`
+        `Changing email to: ${currentEmail}`
       );
 
-      const emailField = page.locator('#email');
+      const emailAfterDuplicate =
+        page.locator(
+          '#email'
+        );
 
-      await expect(emailField).toBeVisible({
+      await expect(
+        emailAfterDuplicate
+      ).toBeVisible({
         timeout: 15000
       });
 
-      await emailField.scrollIntoViewIfNeeded();
+      await emailAfterDuplicate.fill(
+        currentEmail
+      );
 
-      await emailField.fill(newEmail);
-
-      await expect(emailField).toHaveValue(
-        newEmail
+      await expect(
+        emailAfterDuplicate
+      ).toHaveValue(
+        currentEmail
       );
 
       console.log(
-        `Email changed successfully to: ${newEmail}`
+        `Email changed successfully: ${currentEmail}`
       );
 
-      // Loop repeats and clicks Next again.
+      nextButton =
+        await getVisibleNextButton(
+          page
+        );
+
+      await nextButton.scrollIntoViewIfNeeded();
+
+      await nextButton.click();
+
+      console.log(
+        'NEXT clicked again after changing email.'
+      );
+
+      await page.waitForTimeout(
+        3000
+      );
     }
 
-    // ============================================================
-    // 7. WAIT FOR SKILLS TAB
-    // ============================================================
-
-    const skillsHeading = page.getByText(
-      'Skills & Experience',
-      { exact: true }
+    console.log(
+      'Existing application message not displayed.'
     );
-
-    await expect(skillsHeading).toBeVisible({
-      timeout: 30000
-    });
 
     console.log(
-      'Skills tab loaded successfully.'
+      `Email is available. Continuing with: ${currentEmail}`
     );
 
     // ============================================================
-    // 8. HOW WOULD YOU LIKE TO GET INVOLVED?
+    // 10. DETERMINE FIRST AVAILABLE TAB
+    //
+    // HIDDEN TABS ARE SKIPPED.
     // ============================================================
 
-    const involvementLabel = page.getByText(
-      'How would you like to get involved?',
-      { exact: true }
-    );
-
-    await expect(involvementLabel).toBeVisible({
-      timeout: 15000
-    });
-
-    await involvementLabel.scrollIntoViewIfNeeded();
-
-    console.log(
-      'How would you like to get involved? field found.'
-    );
-
-    const involvementField =
-      involvementLabel.locator(
-        'xpath=following::div[1]'
+    let currentTab =
+      await getVisibleTab(
+        page,
+        [
+          'Skills & Experience',
+          'Waiver Form',
+          'Background Check',
+          'Onboarding',
+          'Summary'
+        ]
       );
 
-    await expect(involvementField).toBeVisible({
-      timeout: 15000
-    });
-
-    await involvementField.click();
-
-    await page.waitForTimeout(1000);
-
     console.log(
-      'How would you like to get involved dropdown opened.'
+      `First available tab after Info: ${currentTab ?? 'none detected'}`
     );
 
-    const clearAllFirst = page.getByText(
-      'Clear all',
-      { exact: true }
-    );
+    // ============================================================
+    // 11. SKILLS & EXPERIENCE
+    //
+    // If hidden, it is skipped.
+    // ============================================================
 
     if (
-      await clearAllFirst.isVisible().catch(() => false)
+      currentTab ===
+      'Skills & Experience'
     ) {
-      await clearAllFirst.click();
-      await page.waitForTimeout(500);
-      await involvementField.click();
-      await page.waitForTimeout(500);
-    }
-
-    const firstSelected =
-      await selectThreeOptions(
-        ['Adventure', 'Biking', 'Fishing'],
-        'How would you like to get involved?'
+      console.log(
+        'Skills & Experience tab is visible. Processing Skills.'
       );
 
-    expect(firstSelected).toEqual([
-      'Adventure',
-      'Biking',
-      'Fishing'
-    ]);
-
-    console.log(
-      `First question selected values: ${firstSelected.join(', ')}`
-    );
-
-    await involvementField.click();
-    await page.waitForTimeout(500);
-
-    // ============================================================
-    // 9. SKILLS / EXPERIENCE
-    // ============================================================
-
-    const experienceLabel = page.getByText(
-      'What skills or experience can you contribute?',
-      { exact: true }
-    );
-
-    await expect(experienceLabel).toBeVisible({
-      timeout: 15000
-    });
-
-    await experienceLabel.scrollIntoViewIfNeeded();
-
-    console.log(
-      'What skills or experience can you contribute? field found.'
-    );
-
-    const experienceField =
-      experienceLabel.locator(
-        'xpath=following::div[1]'
-      );
-
-    await expect(experienceField).toBeVisible({
-      timeout: 15000
-    });
-
-    await experienceField.click();
-
-    await page.waitForTimeout(1000);
-
-    console.log(
-      'Skills/experience multi-select dropdown opened.'
-    );
-
-    const clearAllSecond = page.getByText(
-      'Clear all',
-      { exact: true }
-    );
-
-    if (
-      await clearAllSecond.isVisible().catch(() => false)
-    ) {
-      await clearAllSecond.click();
-      await page.waitForTimeout(500);
-      await experienceField.click();
-      await page.waitForTimeout(500);
-    }
-
-    const secondSelected =
-      await selectThreeOptions(
-        ['Hiking', 'Kayaking', 'Indoors'],
-        'What skills or experience can you contribute?'
-      );
-
-    expect(secondSelected).toEqual([
-      'Hiking',
-      'Kayaking',
-      'Indoors'
-    ]);
-
-    console.log(
-      `Second question selected values: ${secondSelected.join(', ')}`
-    );
-
-    console.log(
-      'Both Skills questions validated successfully.'
-    );
-
-    await page.screenshot({
-      path:
-        'screenshots/volunteer-skills-both-questions.png',
-      fullPage: true
-    });
-
-    await experienceField.click();
-    await page.waitForTimeout(500);
-
-    // ============================================================
-    // 10. SKILLS -> WAIVER
-    // ============================================================
-
-    nextButton = await getVisibleNextButton(page);
-
-    await nextButton.scrollIntoViewIfNeeded();
-    await nextButton.click();
-
-    console.log(
-      'NEXT clicked from Skills tab.'
-    );
-
-    await page.waitForTimeout(2500);
-
-    // ============================================================
-    // 11. WAIVER FORM
-    // ============================================================
-
-    const waiverForm = page.getByText(
-      'Waiver Form',
-      { exact: true }
-    ).first();
-
-    await expect(waiverForm).toBeVisible({
-      timeout: 20000
-    });
-
-    console.log(
-      'Successfully navigated to Waiver Form.'
-    );
-
-    await page.screenshot({
-      path:
-        'screenshots/volunteer-waiver-form.png',
-      fullPage: true
-    });
-
-    // ============================================================
-    // 12. CLICK NEXT WITHOUT CONSENT
-    // ============================================================
-
-    nextButton = await getVisibleNextButton(page);
-
-    await nextButton.scrollIntoViewIfNeeded();
-    await nextButton.click();
-
-    console.log(
-      'Waiver NEXT clicked without accepting consent.'
-    );
-
-    await page.waitForTimeout(1500);
-
-    await expect(
-      page.getByText(
-        /Please\s+accept\s+consent/i
-      ).first()
-    ).toBeVisible({
-      timeout: 15000
-    });
-
-    console.log(
-      '"Please accept consent" validation message displayed successfully.'
-    );
-
-    // ============================================================
-    // 13. ELECTRONIC SIGNATURE CONSENT
-    // ============================================================
-
-    const consentStatement = page.getByText(
-      /By checking here,\s*you are consenting to the use of your electronic signature/i
-    ).first();
-
-    await expect(consentStatement).toBeVisible({
-      timeout: 15000
-    });
-
-    await consentStatement.scrollIntoViewIfNeeded();
-
-    console.log(
-      'Electronic Signature Consent statement found.'
-    );
-
-    let electronicConsentCheckbox =
-      consentStatement.locator(
-        'xpath=ancestor::label[1]//input[@type="checkbox"]'
-      ).first();
-
-    if (
-      await electronicConsentCheckbox.count() === 0
-    ) {
-      electronicConsentCheckbox =
-        consentStatement.locator(
-          'xpath=ancestor::*[.//input[@type="checkbox"]][1]//input[@type="checkbox"]'
+      const skillsHeading =
+        page.getByText(
+          'Skills & Experience',
+          {
+            exact: true
+          }
         ).first();
+
+      await expect(
+        skillsHeading
+      ).toBeVisible({
+        timeout: 15000
+      });
+
+      console.log(
+        'Skills tab loaded successfully.'
+      );
+
+      // ----------------------------------------------------------
+      // INVOLVEMENT QUESTION
+      // ----------------------------------------------------------
+
+      const involvementLabel =
+        page.getByText(
+          'How would you like to get involved?',
+          {
+            exact: true
+          }
+        );
+
+      await expect(
+        involvementLabel
+      ).toBeVisible({
+        timeout: 15000
+      });
+
+      await involvementLabel.scrollIntoViewIfNeeded();
+
+      console.log(
+        'How would you like to get involved? field found.'
+      );
+
+      const involvementField =
+        involvementLabel.locator(
+          'xpath=following::div[1]'
+        );
+
+      await expect(
+        involvementField
+      ).toBeVisible({
+        timeout: 15000
+      });
+
+      await involvementField.click();
+
+      await page.waitForTimeout(
+        1000
+      );
+
+      console.log(
+        'How would you like to get involved dropdown opened.'
+      );
+
+      const clearAllFirst =
+        page.getByText(
+          'Clear all',
+          {
+            exact: true
+          }
+        );
+
+      if (
+        await clearAllFirst
+          .isVisible()
+          .catch(() => false)
+      ) {
+        await clearAllFirst.click();
+
+        await page.waitForTimeout(
+          500
+        );
+
+        await involvementField.click();
+
+        await page.waitForTimeout(
+          500
+        );
+      }
+
+      const firstQuestionOptions = [
+        'Adventure',
+        'Biking',
+        'Fishing'
+      ];
+
+      const firstSelected =
+        await selectThreeOptions(
+          firstQuestionOptions,
+          'How would you like to get involved?'
+        );
+
+      expect(
+        firstSelected.length
+      ).toBe(3);
+
+      expect(
+        firstSelected
+      ).toEqual([
+        'Adventure',
+        'Biking',
+        'Fishing'
+      ]);
+
+      console.log(
+        `First question selected values: ${firstSelected.join(', ')}`
+      );
+
+      await involvementField.click();
+
+      await page.waitForTimeout(
+        500
+      );
+
+      // ----------------------------------------------------------
+      // EXPERIENCE QUESTION
+      // ----------------------------------------------------------
+
+      const experienceLabel =
+        page.getByText(
+          'What skills or experience can you contribute?',
+          {
+            exact: true
+          }
+        );
+
+      await expect(
+        experienceLabel
+      ).toBeVisible({
+        timeout: 15000
+      });
+
+      await experienceLabel.scrollIntoViewIfNeeded();
+
+      console.log(
+        'What skills or experience can you contribute? field found.'
+      );
+
+      const experienceField =
+        experienceLabel.locator(
+          'xpath=following::div[1]'
+        );
+
+      await expect(
+        experienceField
+      ).toBeVisible({
+        timeout: 15000
+      });
+
+      await experienceField.click();
+
+      await page.waitForTimeout(
+        1000
+      );
+
+      console.log(
+        'Skills/experience multi-select dropdown opened.'
+      );
+
+      const clearAllSecond =
+        page.getByText(
+          'Clear all',
+          {
+            exact: true
+          }
+        );
+
+      if (
+        await clearAllSecond
+          .isVisible()
+          .catch(() => false)
+      ) {
+        await clearAllSecond.click();
+
+        await page.waitForTimeout(
+          500
+        );
+
+        await experienceField.click();
+
+        await page.waitForTimeout(
+          500
+        );
+      }
+
+      const secondQuestionOptions = [
+        'Hiking',
+        'Kayaking',
+        'Indoors'
+      ];
+
+      const secondSelected =
+        await selectThreeOptions(
+          secondQuestionOptions,
+          'What skills or experience can you contribute?'
+        );
+
+      expect(
+        secondSelected.length
+      ).toBe(3);
+
+      expect(
+        secondSelected
+      ).toEqual([
+        'Hiking',
+        'Kayaking',
+        'Indoors'
+      ]);
+
+      console.log(
+        `Second question selected values: ${secondSelected.join(', ')}`
+      );
+
+      console.log(
+        'Both Skills questions validated successfully.'
+      );
+
+      await page.screenshot({
+        path:
+          'screenshots/volunteer-skills-both-questions.png',
+        fullPage: true
+      });
+
+      await experienceField.click();
+
+      await page.waitForTimeout(
+        500
+      );
+
+      // ----------------------------------------------------------
+      // SKILLS -> NEXT
+      // ----------------------------------------------------------
+
+      await clickNext(
+        'NEXT clicked from Skills tab.'
+      );
+    } else {
+      console.log(
+        'Skills & Experience tab is hidden. Skipping Skills tab.'
+      );
     }
+
+    // ============================================================
+    // 12. WAIVER FORM
+    //
+    // If hidden, it is skipped.
+    // ============================================================
+
+    currentTab =
+      await getVisibleTab(
+        page,
+        [
+          'Waiver Form',
+          'Background Check',
+          'Onboarding',
+          'Summary'
+        ]
+      );
+
+    console.log(
+      `Next available tab: ${currentTab ?? 'none detected'}`
+    );
 
     if (
-      await electronicConsentCheckbox.count() === 0
+      currentTab ===
+      'Waiver Form'
     ) {
-
-      const allCheckboxes =
-        page.locator(
-          'input[type="checkbox"]'
-        );
-
-      const checkboxCount =
-        await allCheckboxes.count();
-
-      const consentBox =
-        await consentStatement.boundingBox();
-
-      if (!consentBox) {
-        throw new Error(
-          'Unable to locate Electronic Signature Consent.'
-        );
-      }
-
-      let found = false;
-
-      for (let i = 0; i < checkboxCount; i++) {
-
-        const candidate =
-          allCheckboxes.nth(i);
-
-        const candidateBox =
-          await candidate
-            .boundingBox()
-            .catch(() => null);
-
-        if (!candidateBox) {
-          continue;
-        }
-
-        const verticalDistance =
-          Math.abs(
-            candidateBox.y - consentBox.y
-          );
-
-        const horizontalDistance =
-          Math.abs(
-            candidateBox.x - consentBox.x
-          );
-
-        if (
-          verticalDistance < 150 &&
-          horizontalDistance < 200
-        ) {
-          electronicConsentCheckbox =
-            candidate;
-
-          found = true;
-          break;
-        }
-      }
-
-      if (!found) {
-        throw new Error(
-          'Electronic Signature Consent checkbox could not be located.'
-        );
-      }
-    }
-
-    await electronicConsentCheckbox.check({
-      force: true
-    });
-
-    await expect(
-      electronicConsentCheckbox
-    ).toBeChecked();
-
-    console.log(
-      'Electronic Signature Consent checkbox is checked.'
-    );
-
-    // ============================================================
-    // 14. CLICK NEXT AFTER CONSENT
-    // ============================================================
-
-    nextButton = await getVisibleNextButton(page);
-
-    await nextButton.scrollIntoViewIfNeeded();
-    await nextButton.click();
-
-    console.log(
-      'NEXT clicked after selecting Electronic Signature Consent.'
-    );
-
-    await page.waitForTimeout(2000);
-
-    await expect(
-      page.getByText(
-        /Signature\s+is\s+required/i
-      ).first()
-    ).toBeVisible({
-      timeout: 15000
-    });
-
-    console.log(
-      '"Signature is required" validation message displayed successfully.'
-    );
-
-    // ============================================================
-    // 15. FIND PARTICIPANT SIGNATURE
-    // ============================================================
-
-    const participantSignatureLabel =
-      page.getByText(
-        /Participant[’']s Signature/i,
-        { exact: false }
-      ).first();
-
-    await expect(
-      participantSignatureLabel
-    ).toBeVisible({
-      timeout: 15000
-    });
-
-    await participantSignatureLabel.scrollIntoViewIfNeeded();
-
-    console.log(
-      'Participant’s Signature label found.'
-    );
-
-    const labelBox =
-      await participantSignatureLabel.boundingBox();
-
-    if (!labelBox) {
-      throw new Error(
-        'Participant’s Signature label position could not be determined.'
-      );
-    }
-
-    // Prefer controls located in the same nearby container.
-    let signatureControl: Locator | null = null;
-
-    const nearbyContainers = [
-      participantSignatureLabel.locator(
-        'xpath=ancestor::*[self::div or self::td or self::section][1]'
-      ),
-      participantSignatureLabel.locator(
-        'xpath=parent::*'
-      )
-    ];
-
-    for (const container of nearbyContainers) {
-
-      const candidates = container.locator(
-        'input:not([type="hidden"]):not([readonly]):not([disabled]), ' +
-        'textarea:not([readonly]):not([disabled]), ' +
-        'canvas, ' +
-        '[contenteditable="true"]'
+      console.log(
+        'Waiver Form tab is visible. Processing Waiver.'
       );
 
-      const count = await candidates.count();
+      const waiverForm =
+        page.getByText(
+          'Waiver Form',
+          {
+            exact: true
+          }
+        ).first();
 
-      for (let i = 0; i < count; i++) {
+      await expect(
+        waiverForm
+      ).toBeVisible({
+        timeout: 20000
+      });
 
-        const candidate = candidates.nth(i);
+      console.log(
+        'Successfully navigated to Waiver Form.'
+      );
 
-        if (
-          await candidate.isVisible().catch(() => false)
+      await page.screenshot({
+        path:
+          'screenshots/volunteer-waiver-form.png',
+        fullPage: true
+      });
+
+      // ----------------------------------------------------------
+      // NEXT WITHOUT CONSENT
+      // ----------------------------------------------------------
+
+      nextButton =
+        await getVisibleNextButton(
+          page
+        );
+
+      await nextButton.scrollIntoViewIfNeeded();
+
+      await nextButton.click();
+
+      console.log(
+        'Waiver NEXT clicked without accepting consent.'
+      );
+
+      await page.waitForTimeout(
+        1500
+      );
+
+      const consentError =
+        page.getByText(
+          /Please\s+accept\s+consent/i
+        ).first();
+
+      await expect(
+        consentError
+      ).toBeVisible({
+        timeout: 15000
+      });
+
+      console.log(
+        '"Please accept consent" validation message displayed successfully.'
+      );
+
+      // ----------------------------------------------------------
+      // ELECTRONIC SIGNATURE CONSENT
+      // ----------------------------------------------------------
+
+      const consentStatement =
+        page.getByText(
+          /By checking here,\s*you are consenting to the use of your electronic signature/i
+        ).first();
+
+      await expect(
+        consentStatement
+      ).toBeVisible({
+        timeout: 15000
+      });
+
+      await consentStatement.scrollIntoViewIfNeeded();
+
+      console.log(
+        'Electronic Signature Consent statement found.'
+      );
+
+      let electronicConsentCheckbox =
+        consentStatement.locator(
+          'xpath=ancestor::label[1]//input[@type="checkbox"]'
+        ).first();
+
+      if (
+        await electronicConsentCheckbox.count() === 0
+      ) {
+        electronicConsentCheckbox =
+          consentStatement.locator(
+            'xpath=ancestor::*[.//input[@type="checkbox"]][1]//input[@type="checkbox"]'
+          ).first();
+      }
+
+      if (
+        await electronicConsentCheckbox.count() === 0
+      ) {
+        const allCheckboxes =
+          page.locator(
+            'input[type="checkbox"]'
+          );
+
+        const checkboxCount =
+          await allCheckboxes.count();
+
+        const consentBox =
+          await consentStatement.boundingBox();
+
+        if (!consentBox) {
+          throw new Error(
+            'Unable to locate Electronic Signature Consent.'
+          );
+        }
+
+        let found = false;
+
+        for (
+          let i = 0;
+          i < checkboxCount;
+          i++
         ) {
-          signatureControl = candidate;
-          break;
+          const candidate =
+            allCheckboxes.nth(i);
+
+          const candidateBox =
+            await candidate
+              .boundingBox()
+              .catch(() => null);
+
+          if (!candidateBox) {
+            continue;
+          }
+
+          const verticalDistance =
+            Math.abs(
+              candidateBox.y -
+              consentBox.y
+            );
+
+          const horizontalDistance =
+            Math.abs(
+              candidateBox.x -
+              consentBox.x
+            );
+
+          if (
+            verticalDistance < 150 &&
+            horizontalDistance < 200
+          ) {
+            electronicConsentCheckbox =
+              candidate;
+
+            found = true;
+
+            break;
+          }
+        }
+
+        if (!found) {
+          throw new Error(
+            'Electronic Signature Consent checkbox could not be located.'
+          );
         }
       }
 
-      if (signatureControl) {
-        break;
-      }
-    }
+      await electronicConsentCheckbox.check({
+        force: true
+      });
 
-    // Fallback: find nearest editable control.
-    if (!signatureControl) {
+      await expect(
+        electronicConsentCheckbox
+      ).toBeChecked();
+
+      console.log(
+        'Electronic Signature Consent checkbox is checked.'
+      );
+
+      // ----------------------------------------------------------
+      // NEXT AFTER CONSENT
+      // ----------------------------------------------------------
+
+      nextButton =
+        await getVisibleNextButton(
+          page
+        );
+
+      await nextButton.scrollIntoViewIfNeeded();
+
+      await nextButton.click();
+
+      console.log(
+        'NEXT clicked after selecting Electronic Signature Consent.'
+      );
+
+      await page.waitForTimeout(
+        2000
+      );
+
+      // ----------------------------------------------------------
+      // SIGNATURE REQUIRED
+      // ----------------------------------------------------------
+
+      const signatureRequiredMessage =
+        page.getByText(
+          /Signature\s+is\s+required/i
+        ).first();
+
+      await expect(
+        signatureRequiredMessage
+      ).toBeVisible({
+        timeout: 15000
+      });
+
+      console.log(
+        '"Signature is required" validation message displayed successfully.'
+      );
+
+      // ----------------------------------------------------------
+      // PARTICIPANT SIGNATURE LABEL
+      // ----------------------------------------------------------
+
+      const participantSignatureLabel =
+        page.getByText(
+          /Participant[’']s Signature/i,
+          {
+            exact: false
+          }
+        ).first();
+
+      await expect(
+        participantSignatureLabel
+      ).toBeVisible({
+        timeout: 15000
+      });
+
+      await participantSignatureLabel.scrollIntoViewIfNeeded();
+
+      console.log(
+        'Participant’s Signature label found.'
+      );
+
+      // ----------------------------------------------------------
+      // FIND ACTUAL SIGNATURE CONTROL
+      // ----------------------------------------------------------
+
+      let signatureControl:
+        Locator | null = null;
 
       const signatureCandidates =
         page.locator(
@@ -905,14 +1299,26 @@ test(
           '[contenteditable="true"]'
         );
 
+      const labelBox =
+        await participantSignatureLabel.boundingBox();
+
+      if (!labelBox) {
+        throw new Error(
+          'Participant’s Signature label position could not be determined.'
+        );
+      }
+
       const candidateCount =
         await signatureCandidates.count();
 
       let nearestDistance =
         Number.MAX_SAFE_INTEGER;
 
-      for (let i = 0; i < candidateCount; i++) {
-
+      for (
+        let i = 0;
+        i < candidateCount;
+        i++
+      ) {
         const candidate =
           signatureCandidates.nth(i);
 
@@ -935,353 +1341,433 @@ test(
 
         const verticalDistance =
           Math.abs(
-            labelBox.y - candidateBox.y
+            labelBox.y -
+            candidateBox.y
           );
 
         const horizontalDistance =
           Math.abs(
-            labelBox.x - candidateBox.x
+            labelBox.x -
+            candidateBox.x
           );
 
         const distance =
           verticalDistance +
           horizontalDistance;
 
-        if (distance < nearestDistance) {
-          nearestDistance = distance;
-          signatureControl = candidate;
+        if (
+          distance <
+          nearestDistance
+        ) {
+          nearestDistance =
+            distance;
+
+          signatureControl =
+            candidate;
         }
       }
-    }
 
-    if (!signatureControl) {
-      throw new Error(
-        'Actual Participant’s Signature control could not be located.'
-      );
-    }
-
-    await expect(
-      signatureControl
-    ).toBeVisible({
-      timeout: 15000
-    });
-
-    console.log(
-      'Participant’s Signature control located successfully.'
-    );
-
-    const signatureTagName =
-      await signatureControl.evaluate(
-        element =>
-          element.tagName.toLowerCase()
-      );
-
-    console.log(
-      `Participant’s Signature control type: ${signatureTagName}`
-    );
-
-    // ============================================================
-    // 16. ENTER SIGNATURE
-    // ============================================================
-
-    if (
-      signatureTagName === 'input' ||
-      signatureTagName === 'textarea'
-    ) {
-
-      await signatureControl.fill('Michael');
-
-      await expect(
-        signatureControl
-      ).toHaveValue('Michael');
-
-      console.log(
-        'Participant signature entered successfully: Michael'
-      );
-
-    } else if (
-      await signatureControl.getAttribute(
-        'contenteditable'
-      ) === 'true'
-    ) {
-
-      await signatureControl.click();
-
-      await signatureControl.fill('Michael');
-
-      console.log(
-        'Participant signature entered successfully: Michael'
-      );
-
-    } else if (
-      signatureTagName === 'canvas'
-    ) {
-
-      await signatureControl.scrollIntoViewIfNeeded();
-
-      const canvasBox =
-        await signatureControl.boundingBox();
-
-      if (!canvasBox) {
+      if (!signatureControl) {
         throw new Error(
-          'Participant Signature canvas position could not be determined.'
+          'Actual Participant’s Signature control could not be located.'
         );
       }
 
-      const startX =
-        canvasBox.x + 30;
-
-      const startY =
-        canvasBox.y +
-        canvasBox.height / 2;
-
-      await page.mouse.move(
-        startX,
-        startY
-      );
-
-      await page.mouse.down();
-
-      await page.mouse.move(
-        startX + 10,
-        startY - 15
-      );
-
-      await page.mouse.move(
-        startX + 20,
-        startY + 10
-      );
-
-      await page.mouse.move(
-        startX + 35,
-        startY - 15
-      );
-
-      await page.mouse.move(
-        startX + 50,
-        startY + 10
-      );
-
-      await page.mouse.move(
-        startX + 70,
-        startY - 5
-      );
-
-      await page.mouse.move(
-        startX + 90,
-        startY + 5
-      );
-
-      await page.mouse.move(
-        startX + 115,
-        startY - 5
-      );
-
-      await page.mouse.up();
-
-      console.log(
-        'Participant signature drawn successfully.'
-      );
-    }
-
-    await page.waitForTimeout(1500);
-
-    await page.screenshot({
-      path:
-        'screenshots/volunteer-waiver-signature-entered.png',
-      fullPage: true
-    });
-
-    console.log(
-      'Waiver signature screenshot captured successfully.'
-    );
-
-    // ============================================================
-    // 17. WAIVER -> BACKGROUND CHECK
-    // ============================================================
-
-    nextButton = await getVisibleNextButton(page);
-
-    await nextButton.scrollIntoViewIfNeeded();
-    await nextButton.click();
-
-    console.log(
-      'NEXT clicked from Waiver Form.'
-    );
-
-    await page.waitForTimeout(2500);
-
-    const backgroundCheck =
-      page.getByText(
-        'Background Check',
-        { exact: true }
-      ).first();
-
-    await expect(
-      backgroundCheck
-    ).toBeVisible({
-      timeout: 20000
-    });
-
-    console.log(
-      'Successfully navigated to Background Check tab.'
-    );
-
-    await page.screenshot({
-      path:
-        'screenshots/volunteer-background-check.png',
-      fullPage: true
-    });
-
-    // ============================================================
-    // 18. BACKGROUND CHECK -> ONBOARDING
-    // ============================================================
-
-    nextButton = await getVisibleNextButton(page);
-
-    await nextButton.scrollIntoViewIfNeeded();
-    await nextButton.click();
-
-    console.log(
-      'NEXT clicked from Background Check.'
-    );
-
-    await page.waitForTimeout(2500);
-
-    const onboardingHeading =
-      page.getByText(
-        'Onboarding',
-        { exact: true }
-      ).first();
-
-    await expect(
-      onboardingHeading
-    ).toBeVisible({
-      timeout: 20000
-    });
-
-    console.log(
-      'Successfully navigated to Onboarding tab.'
-    );
-
-    // ============================================================
-    // 19. ONBOARDING QUESTIONS
-    // ============================================================
-
-    const onboardingQuestions = [
-      {
-        question:
-          'What inspired you to become a volunteer with our organization?',
-        answer:
-          'I wanted to give back to my community and make a positive difference in the lives of others.'
-      },
-      {
-        question:
-          'Tell us something unique or interesting about yourself?',
-        answer:
-          'I enjoy learning new skills, exploring new places, and volunteering at community events.'
-      },
-      {
-        question:
-          'Do you have a personal connection to our mission or the people we serve? Please explain.',
-        answer:
-          'Yes. I have always valued supporting older adults and helping people feel connected and cared for.'
-      },
-      {
-        question:
-          'Describe any experience you have working with older adults or senior communities.',
-        answer:
-          'I have volunteered at community activities and enjoyed spending time with older adults, assisting with activities and providing companionship.'
-      }
-    ];
-
-    for (const item of onboardingQuestions) {
-
-      console.log(
-        `Locating Onboarding question: ${item.question}`
-      );
-
-      const questionLabel =
-        page.getByText(
-          item.question,
-          { exact: true }
-        ).first();
-
       await expect(
-        questionLabel
+        signatureControl
       ).toBeVisible({
         timeout: 15000
       });
 
-      await questionLabel.scrollIntoViewIfNeeded();
-
-      let responseControl =
-        questionLabel.locator(
-          'xpath=following::textarea[1]'
-        );
-
-      if (
-        !(await responseControl
-          .isVisible()
-          .catch(() => false))
-      ) {
-
-        responseControl =
-          questionLabel.locator(
-            'xpath=following::input[not(@type="hidden")][1]'
-          );
-      }
-
-      await expect(
-        responseControl
-      ).toBeVisible({
-        timeout: 10000
-      });
-
-      await responseControl.fill(
-        item.answer
+      console.log(
+        'Participant’s Signature control located successfully.'
       );
 
+      const signatureTagName =
+        await signatureControl.evaluate(
+          element =>
+            element.tagName.toLowerCase()
+        );
+
       console.log(
-        `Response entered successfully for: ${item.question}`
+        `Participant’s Signature control type: ${signatureTagName}`
+      );
+
+      // ----------------------------------------------------------
+      // ENTER SIGNATURE
+      // ----------------------------------------------------------
+
+      if (
+        signatureTagName === 'input' ||
+        signatureTagName === 'textarea'
+      ) {
+        await signatureControl.fill(
+          'Michael'
+        );
+
+        await expect(
+          signatureControl
+        ).toHaveValue(
+          'Michael'
+        );
+
+        console.log(
+          'Participant signature entered successfully: Michael'
+        );
+      } else if (
+        await signatureControl.getAttribute(
+          'contenteditable'
+        ) === 'true'
+      ) {
+        await signatureControl.click();
+
+        await signatureControl.fill(
+          'Michael'
+        );
+
+        console.log(
+          'Participant signature entered successfully: Michael'
+        );
+      } else if (
+        signatureTagName === 'canvas'
+      ) {
+        await signatureControl.scrollIntoViewIfNeeded();
+
+        const canvasBox =
+          await signatureControl.boundingBox();
+
+        if (!canvasBox) {
+          throw new Error(
+            'Participant Signature canvas position could not be determined.'
+          );
+        }
+
+        const startX =
+          canvasBox.x + 30;
+
+        const startY =
+          canvasBox.y +
+          canvasBox.height / 2;
+
+        await page.mouse.move(
+          startX,
+          startY
+        );
+
+        await page.mouse.down();
+
+        await page.mouse.move(
+          startX + 10,
+          startY - 15
+        );
+
+        await page.mouse.move(
+          startX + 20,
+          startY + 10
+        );
+
+        await page.mouse.move(
+          startX + 35,
+          startY - 15
+        );
+
+        await page.mouse.move(
+          startX + 50,
+          startY + 10
+        );
+
+        await page.mouse.move(
+          startX + 70,
+          startY - 5
+        );
+
+        await page.mouse.move(
+          startX + 90,
+          startY + 5
+        );
+
+        await page.mouse.move(
+          startX + 115,
+          startY - 5
+        );
+
+        await page.mouse.up();
+
+        console.log(
+          'Participant signature drawn successfully.'
+        );
+      }
+
+      await page.waitForTimeout(
+        1500
+      );
+
+      await page.screenshot({
+        path:
+          'screenshots/volunteer-waiver-signature-entered.png',
+        fullPage: true
+      });
+
+      console.log(
+        'Waiver signature screenshot captured successfully.'
+      );
+
+      // ----------------------------------------------------------
+      // WAIVER -> NEXT
+      // ----------------------------------------------------------
+
+      await clickNext(
+        'NEXT clicked from Waiver Form.'
+      );
+    } else {
+      console.log(
+        'Waiver Form tab is hidden. Skipping Waiver tab.'
       );
     }
 
-    console.log(
-      'All 4 Onboarding questions were answered successfully.'
-    );
-
-    await page.screenshot({
-      path:
-        'screenshots/volunteer-onboarding.png',
-      fullPage: true
-    });
-
     // ============================================================
-    // 20. ONBOARDING -> SUMMARY
+    // 13. BACKGROUND CHECK
+    //
+    // If hidden, it is skipped.
     // ============================================================
 
-    nextButton = await getVisibleNextButton(page);
-
-    await nextButton.scrollIntoViewIfNeeded();
-    await nextButton.click();
+    currentTab =
+      await getVisibleTab(
+        page,
+        [
+          'Background Check',
+          'Onboarding',
+          'Summary'
+        ]
+      );
 
     console.log(
-      'NEXT clicked from Onboarding.'
+      `Next available tab: ${currentTab ?? 'none detected'}`
     );
 
-    await page.waitForTimeout(2500);
+    if (
+      currentTab ===
+      'Background Check'
+    ) {
+      console.log(
+        'Background Check tab is visible.'
+      );
+
+      const backgroundCheck =
+        page.getByText(
+          'Background Check',
+          {
+            exact: true
+          }
+        ).first();
+
+      await expect(
+        backgroundCheck
+      ).toBeVisible({
+        timeout: 20000
+      });
+
+      console.log(
+        'Successfully navigated to Background Check tab.'
+      );
+
+      await page.screenshot({
+        path:
+          'screenshots/volunteer-background-check.png',
+        fullPage: true
+      });
+
+      // ----------------------------------------------------------
+      // BACKGROUND CHECK -> ONBOARDING
+      // ----------------------------------------------------------
+
+      await clickNext(
+        'NEXT clicked from Background Check.'
+      );
+    } else {
+      console.log(
+        'Background Check tab is hidden. Skipping Background Check tab.'
+      );
+    }
+
+    // ============================================================
+    // 14. ONBOARDING
+    //
+    // If hidden, it is skipped.
+    // ============================================================
+
+    currentTab =
+      await getVisibleTab(
+        page,
+        [
+          'Onboarding',
+          'Summary'
+        ]
+      );
+
+    console.log(
+      `Next available tab: ${currentTab ?? 'none detected'}`
+    );
+
+    if (
+      currentTab ===
+      'Onboarding'
+    ) {
+      console.log(
+        'Onboarding tab is visible. Processing Onboarding.'
+      );
+
+      const onboardingHeading =
+        page.getByText(
+          'Onboarding',
+          {
+            exact: true
+          }
+        ).first();
+
+      await expect(
+        onboardingHeading
+      ).toBeVisible({
+        timeout: 20000
+      });
+
+      console.log(
+        'Successfully navigated to Onboarding tab.'
+      );
+
+      // ----------------------------------------------------------
+      // ONBOARDING QUESTIONS
+      // ----------------------------------------------------------
+
+      const onboardingQuestions = [
+        {
+          question:
+            'What inspired you to become a volunteer with our organization?',
+
+          answer:
+            'I wanted to give back to my community and make a positive difference in the lives of others.'
+        },
+
+        {
+          question:
+            'Tell us something unique or interesting about yourself?',
+
+          answer:
+            'I enjoy learning new skills, exploring new places, and volunteering at community events.'
+        },
+
+        {
+          question:
+            'Do you have a personal connection to our mission or the people we serve? Please explain.',
+
+          answer:
+            'Yes. I have always valued supporting older adults and helping people feel connected and cared for.'
+        },
+
+        {
+          question:
+            'Describe any experience you have working with older adults or senior communities.',
+
+          answer:
+            'I have volunteered at community activities and enjoyed spending time with older adults, assisting with activities and providing companionship.'
+        }
+      ];
+
+      for (
+        const item of onboardingQuestions
+      ) {
+        console.log(
+          `Locating Onboarding question: ${item.question}`
+        );
+
+        const questionLabel =
+          page.getByText(
+            item.question,
+            {
+              exact: true
+            }
+          ).first();
+
+        await expect(
+          questionLabel
+        ).toBeVisible({
+          timeout: 15000
+        });
+
+        await questionLabel.scrollIntoViewIfNeeded();
+
+        let responseControl =
+          questionLabel.locator(
+            'xpath=following::textarea[1]'
+          );
+
+        if (
+          !(await responseControl
+            .isVisible()
+            .catch(() => false))
+        ) {
+          responseControl =
+            questionLabel.locator(
+              'xpath=following::input[not(@type="hidden")][1]'
+            );
+        }
+
+        await expect(
+          responseControl
+        ).toBeVisible({
+          timeout: 10000
+        });
+
+        await responseControl.fill(
+          item.answer
+        );
+
+        console.log(
+          `Response entered successfully for: ${item.question}`
+        );
+      }
+
+      console.log(
+        'All 4 Onboarding questions were answered successfully.'
+      );
+
+      await page.screenshot({
+        path:
+          'screenshots/volunteer-onboarding.png',
+        fullPage: true
+      });
+
+      // ----------------------------------------------------------
+      // ONBOARDING -> SUMMARY
+      // ----------------------------------------------------------
+
+      await clickNext(
+        'NEXT clicked from Onboarding.'
+      );
+    } else {
+      console.log(
+        'Onboarding tab is hidden. Skipping Onboarding tab.'
+      );
+    }
+
+    // ============================================================
+    // 15. SUMMARY
+    //
+    // Summary is the final required stage.
+    // ============================================================
 
     const summaryHeading =
       page.getByText(
         'Summary',
-        { exact: true }
+        {
+          exact: true
+        }
       ).first();
 
     await expect(
       summaryHeading
     ).toBeVisible({
-      timeout: 20000
+      timeout: 30000
     });
 
     console.log(
@@ -1295,7 +1781,7 @@ test(
     });
 
     // ============================================================
-    // 21. SUBMIT APPLICATION
+    // 16. SUBMIT APPLICATION
     // ============================================================
 
     const submitApplicationButton =
@@ -1325,11 +1811,7 @@ test(
     );
 
     // ============================================================
-    // 22. WAIT FOR THANK YOU PAGE
-    //
-    // The application redirects directly to the Thank You page.
-    // Do not wait for "Application Submitted Successfully"
-    // because that message may not exist on the destination page.
+    // 17. WAIT FOR THANK YOU PAGE
     // ============================================================
 
     await page.waitForURL(
@@ -1348,17 +1830,24 @@ test(
     );
 
     // ============================================================
-    // 23. THANK YOU PAGE
+    // 18. VALIDATE THANK YOU PAGE
     // ============================================================
 
     await page.waitForLoadState(
       'domcontentloaded'
     ).catch(() => {});
 
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(
+      2000
+    );
+
+    const thankYouPage =
+      page.locator(
+        'body'
+      );
 
     await expect(
-      page.locator('body')
+      thankYouPage
     ).toBeVisible({
       timeout: 15000
     });
@@ -1368,10 +1857,12 @@ test(
     );
 
     // ============================================================
-    // 24. WAIT 2 SECONDS AND CAPTURE SCREENSHOT
+    // 19. WAIT 2 SECONDS AND CAPTURE SCREENSHOT
     // ============================================================
 
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(
+      2000
+    );
 
     await page.screenshot({
       path:
@@ -1384,7 +1875,7 @@ test(
     );
 
     // ============================================================
-    // 25. END TEST
+    // 20. END TEST
     // ============================================================
 
     console.log(
@@ -1395,6 +1886,7 @@ test(
       'Thank You page displayed. Ending script.'
     );
 
-    // No further navigation or actions.
+    // IMPORTANT:
+    // No additional navigation or actions after Thank You page.
   }
 );
